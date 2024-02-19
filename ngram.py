@@ -150,3 +150,88 @@ class SmoothedNGram(NGram):
                 log_sum += self.get_log_prob(token_set, k)
 
         return pow(2, (-1 / N) * log_sum)
+
+
+class InterpolatedTrigram(NGram):
+    def __init__(self, vocab: set) -> None:
+        super().__init__(3, vocab)
+
+        # Training parameters
+        self.word_count = 0
+        self.counter = None
+
+    # Override
+    def fit(self, train_lines: list[str]) -> None:
+        # Count trigram, bigram, and unigram
+        n = self.n
+        word_count = 0
+        counter = {}
+
+        for line in train_lines:
+            tokens = self.tokenize(line)
+            word_count += len(tokens)
+
+            for i in range(len(tokens) - n + 1):
+                trigram = tuple(tokens[i : i + n])
+                bigram = tuple(trigram[:-1])
+                unigram = tuple(bigram[:-1])
+
+                if trigram in counter:
+                    counter[trigram] += 1
+                else:
+                    counter[trigram] = 1
+
+                if bigram in counter:
+                    counter[bigram] += 1
+                else:
+                    counter[bigram] = 1
+
+                if unigram in counter:
+                    counter[unigram] += 1
+                else:
+                    counter[unigram] = 1
+
+        self.word_count = word_count
+        self.counter = counter
+
+    # Override
+    def get_perplexity(self, test_lines: list[str], l1: float, l2: float, l3: float) -> float:
+        # Check if trained
+        assert self.counter != None
+
+        # Check lambda
+        assert 0.0 <= l1 <= 1.0 and 0.0 <= l2 <= 1.0 and 0.0 <= l3 <= 1.0
+        assert l1 + l2 + l3 == 1.0
+
+        # Compute product (log sum) of probability
+        n = self.n
+        word_count = self.word_count
+        counter = self.counter
+        log_sum = 0
+        N = 0
+
+        for line in test_lines:
+            tokens = self.tokenize(line)
+            N += len(tokens)
+
+            for i in range(len(tokens) - n + 1):
+                trigram = tuple(tokens[i : i + n])
+                bigram = tuple(trigram[:-1])
+                unigram = tuple(bigram[:-1])
+
+                trigram_prob = 0
+                bigram_prob = 0
+                unigram_prob = 0
+
+                if trigram in counter:
+                    trigram_prob = counter[trigram] / counter[bigram]
+
+                if bigram in counter:
+                    bigram_prob = counter[bigram] / counter[unigram]
+
+                if unigram in counter:
+                    unigram_prob = counter[unigram] / word_count
+
+                log_sum += math.log2(l3 * trigram_prob + l2 * bigram_prob + l1 * unigram_prob)
+
+        return pow(2, (-1 / N) * log_sum)
